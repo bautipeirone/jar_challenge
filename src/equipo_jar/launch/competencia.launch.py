@@ -34,7 +34,7 @@ def generate_launch_description():
         DeclareLaunchArgument('use_sim_time', default_value='false'),
         DeclareLaunchArgument('victimas', default_value='5',
                               description='cantidad de víctimas a buscar (N)'),
-        Node(
+        Node(   # equipo_jar
             package='equipo_jar',
             executable='nodo_equipo',
             name='nodo_equipo',
@@ -44,6 +44,50 @@ def generate_launch_description():
                 'cantidad_victimas': ParameterValue(victimas, value_type=int),
             }],
         ),
-        # Acá se agregan el resto de los nodos del equipo (localización,
-        # navegación, percepción...). Todos con el mismo `parameters=[params, ...]`.
+        Node(   # detector_scan
+            package='equipo_jar',
+            executable='detector_scan',
+            name='detector_scan',
+            output='screen',
+            parameters=[params, {
+                    'use_sim_time': use_sim_time,
+                }
+            ],
+        ),
+        Node(   # localizador
+            package='equipo_jar',
+            executable='localizador',
+            name='localizador',
+            output='screen',
+            parameters=[params, {
+                'use_sim_time': use_sim_time,
+            }],
+        ),
+        Node(   # campo_verosimilitud
+            package='equipo_jar',
+            executable='campo_verosimilitud',
+            name='campo_verosimilitud',
+            output='screen',
+            parameters=[params, {
+                'use_sim_time': use_sim_time,
+            }],
+        ),
+        Node(   # detector_obstaculos
+            package='equipo_jar',
+            executable='detector_obstaculos',
+            name='detector_obstaculos',
+            output='screen',
+            parameters=[params, {
+                'use_sim_time': use_sim_time,
+            }],
+        ),
+        Node(   # evasor
+            package='equipo_jar',
+            executable='evasor',
+            name='evasor',
+            output='screen',
+            parameters=[params, {
+                'use_sim_time': use_sim_time,
+            }],
+        )
     ])

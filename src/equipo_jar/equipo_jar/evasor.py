@@ -48,7 +48,7 @@ class Evasor(Node):
         self.velocidad_angular = self.get_parameter('velocidad_angular').value
         self.angulo_giro_deg = self.get_parameter('angulo_giro_deg').value
 
-        self.publisher_ = self.create_publisher(Twist, 'cmd_vel', 10)
+        self.publisher_ = self.create_publisher(Twist, 'cmd_vel_evasor', 10)
         
         # Publica una copia filtrada de /scan (mismos campos, pero con
         # infinito en todo lo que la máscara descarta) solo para poder

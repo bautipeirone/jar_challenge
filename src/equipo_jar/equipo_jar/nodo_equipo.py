@@ -44,6 +44,8 @@ class NodoEquipo(Node):
 
         self.sub_mapa = self.create_subscription(
             OccupancyGrid, '/map', self.al_recibir_mapa, QOS_MAPA)
+        self.sub_cmd_vel_evasor = self.create_subscription(
+            Twist, '/cmd_vel_evasor', self.al_recibir_cmd_vel_evasor, 10)
         self.pub_cmd_vel = self.create_publisher(Twist, '/cmd_vel', 10)
         self.pub_victimas = self.create_publisher(PointStamped, '/victimas', 10)
         self.pub_done = self.create_publisher(Empty, '/done', 10)
@@ -63,15 +65,20 @@ class NodoEquipo(Node):
                 f'resolución {mapa.info.resolution:.3f} m')
         self.mapa = mapa
 
-    def ciclo_de_control(self):
-        if self.mapa is None:
-            return  # esperar el mapa: no mover el robot ni reportar antes
+    def al_recibir_cmd_vel_evasor(self, msg):
+        """Recibe la velocidad de evasión y la re-publica en /cmd_vel.
 
-        # TODO: acá va tu estrategia. Por ahora el robot se queda quieto.
-        self.pub_cmd_vel.publish(Twist())
+        Esto es solo para que el template compile y pase el CI. Reemplazalo con tu
+        estrategia de control.
+        """
+        if self.mapa is not None:
+            self.pub_cmd_vel.publish(msg)
+            
+    def ciclo_de_control(self):
+        pass
 
     def reportar_victima(self, x, y):
-        """Publica un reporte. Cada llamada gasta un reporte (§7.2)."""
+        """Publica un reporte. Cada llamada gasta un reporte."""
         self.pub_victimas.publish(armar_reporte(x, y, self.get_clock().now().to_msg()))
 
     def terminar(self):
