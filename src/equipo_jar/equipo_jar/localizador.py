@@ -129,6 +129,7 @@ class Localizador(Node):
 
         self.pub_particulas = self.create_publisher(PoseArray, 'particlecloud', 10)
         self.pub_camino_odom = self.create_publisher(Path, 'camino_odom', 10)
+        self.pub_camino_corregido = self.create_publisher(Path, 'camino_corregido', 10)
 
         # frame_id=map por consistencia visual en RViz con los otros dos
         # caminos, aunque abajo se le cargan poses crudas de /odom (frame
@@ -137,6 +138,8 @@ class Localizador(Node):
         # parámetros iniciales, este camino queda desalineado del real.
         self.camino_odom_msg = Path()
         self.camino_odom_msg.header.frame_id = self.map_frame
+        self.camino_corregido_msg = Path()
+        self.camino_corregido_msg.header.frame_id = self.map_frame
 
     # ---------- callbacks ----------
     # Notá que acá nos apartamos de la convención de semanas anteriores de
