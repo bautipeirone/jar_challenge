@@ -50,12 +50,15 @@ class NodoEquipo(Node):
 
         periodo = 1.0 / self.get_parameter('frecuencia_control_hz').value
         self.create_timer(periodo, self.ciclo_de_control)
-        self.get_logger().info(
+        self.log(
             f'Hay que encontrar {self.cantidad_victimas} víctimas. Esperando el mapa en /map...')
+
+    def log(self, msg):
+        self.get_logger().info(msg)
 
     def al_recibir_mapa(self, mapa):
         if self.mapa is None:
-            self.get_logger().info(
+            self.log(
                 f'Mapa recibido: {mapa.info.width}x{mapa.info.height} celdas, '
                 f'resolución {mapa.info.resolution:.3f} m')
         self.mapa = mapa
