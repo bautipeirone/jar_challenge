@@ -121,27 +121,8 @@ class Evasor(Node):
 
     def hay_obstaculo(self) -> bool:
         """
-        TODO: devolver True si hay algo más cerca que distancia_choque_m
+        Devuelve True si hay algo más cerca que distancia_choque_m
         dentro del cono frontal (angulo_frente_deg +/- angulo_vision_deg/2).
-
-        Pasos sugeridos (con numpy, self.ultimo_scan es un LaserScan):
-          1. Si no llegó ningún scan, es decir es None, devolver False
-          2. Armar un array con el ángulo de cada medición
-          3. Restarle a cada ángulo el centro del cono y normalizar el
-             resultado al rango [-pi, pi] (podés usar self.normalizar_angulo,
-             o hacerlo vectorizado)
-          4. Armar una máscara para las mediciones que caen dentro del cono,
-             y otra para las que están más cerca que la distancia de choque.
-          5. Combinar ambas máscaras (por ejemplo `mascara = dentro_cono &
-             mas_cerca`) y decidir el resultado a partir de si hay al menos
-             una medición que las cumple a la vez.
-          6. Antes de devolver el resultado, llamá a
-             self.publicar_scan_filtrado(mascara) con esa misma máscara
-             combinada. Así, en RViz, ves en vivo exactamente qué rayos
-             están haciendo que el evasor decida "hay obstáculo" — muy útil
-             para confirmar que angulo_vision_deg y distancia_choque_m están
-             calibrados como pensás, antes de que el error se note como un
-             giro raro del robot.
         """
         scan = self.ultimo_scan 
         if scan is None or len(scan.ranges) == 0:
@@ -174,14 +155,14 @@ class Evasor(Node):
         return abs(self.normalizar_angulo(self.yaw_actual - self.yaw_inicial_giro))
 
     def avanzar(self) -> Twist:
-        """TODO: devolver un Twist que mueva el robot derecho hacia
+        """Devuelve un Twist que mueva el robot derecho hacia
         adelante, a velocidad_adelante (m/s)."""
         msg = Twist()
         msg.linear.x = self.velocidad_adelante
         return msg
 
     def girar(self) -> Twist:
-        """TODO: igual que avanzar(), pero para girar en el lugar,
+        """Igual que avanzar(), pero para girar en el lugar,
         a velocidad_angular (rad/s)."""
         msg = Twist()
         msg.angular.z = self.velocidad_angular
@@ -193,10 +174,9 @@ class Evasor(Node):
 
     def maquina_de_estados(self):
         """
-        TODO: esta función es el timer callback, corre a FRECUENCIA_HZ. Es
-        la máquina de estados completa: primero decide si hay que cambiar
-        de estado (transición), después actúa según el estado ya
-        actualizado, y publica.
+        Timer callback, corre a FRECUENCIA_HZ. Es la máquina de estados
+        completa: primero decide si hay que cambiar de estado (transición),
+        después actúa según el estado ya actualizado, y publica.
 
         1. Si estoy en AVANZAR, ver si corresponde pasar a GIRAR. Al
            entrar a GIRAR, guardar la referencia para poder medir después
@@ -206,13 +186,11 @@ class Evasor(Node):
         3. Según el estado ya actualizado, armar el Twist llamando a la
            función que corresponda.
         4. Publicar el Twist.
-
-        Tip: loguear cada transición ayuda a debuggear en qué estado está
-        el robot en cada momento.
         """
+        if self.yaw_actual is None or self.ultimo_scan is None:
+            return  # Todavía no tenemos datos de odometría o lidar
 
         # Transición de estados
-
         if self.estado == ESTADO_AVANZAR:
             if self.hay_obstaculo():
                 self.iniciar_giro()

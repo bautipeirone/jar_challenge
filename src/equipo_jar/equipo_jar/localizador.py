@@ -10,6 +10,7 @@ from rclpy.time import Time
 
 from nav_msgs.msg import OccupancyGrid, Odometry, Path
 from sensor_msgs.msg import LaserScan
+from std_msgs.msg import Float32
 from geometry_msgs.msg import Pose, PoseArray, PoseStamped, Quaternion, TransformStamped
 
 from tf2_ros import TransformBroadcaster, Buffer, TransformListener
@@ -77,6 +78,24 @@ class Localizador(Node):
         # pesar las partículas. Bajarlo (usar más rayos) es más preciso pero
         # más lento; subirlo, al revés.
         self.declare_parameter('submuestreo_scan', 15)
+        # Probabilidad mínima (0-100) que aporta cada punto del scan al pesar. Sin piso, un
+        # solo punto que el mapa no explica (una caja, unos cm de error) hunde el peso de la
+        # partícula, la nube colapsa en una sola pose y, si esa pose está mal, no se recupera.
+        self.declare_parameter('piso_probabilidad', 5.0)
+        # Solo se corrige (pesar + remuestrear) si el robot se movió al menos esto desde la
+        # última corrección. Quieto, remuestrear una y otra vez contra el mismo scan colapsa
+        # la nube sin aportar información, y además gasta CPU.
+        self.declare_parameter('actualizar_distancia_min', 0.05)   # m
+        self.declare_parameter('actualizar_angulo_min', 0.05)      # rad
+        # Calidad de la localización: fracción de los puntos del scan que, con la pose
+        # estimada, caen sobre una pared del mapa (campo >= umbral_calidad). Se publica en
+        # calidad_localizacion para que otros nodos no confíen en una pose dudosa.
+        self.declare_parameter('umbral_calidad', 30.0)
+        # Debug (partículas y caminos para RViz): cada cuánto se publica y cuántas poses
+        # guarda cada camino. Publicarlo en cada /odom con el camino entero era lo más caro
+        # del nodo, y crecía con la duración de la corrida.
+        self.declare_parameter('periodo_debug', 0.5)               # s
+        self.declare_parameter('max_poses_camino', 1000)
 
         self.map_frame = self.get_parameter('map_frame').value
         self.odom_frame = self.get_parameter('odom_frame').value
@@ -89,6 +108,12 @@ class Localizador(Node):
         self.gamma5 = self.get_parameter('gamma5').value
         self.gamma6 = self.get_parameter('gamma6').value
         self.submuestreo_scan = self.get_parameter('submuestreo_scan').value
+        self.piso_probabilidad = self.get_parameter('piso_probabilidad').value
+        self.actualizar_distancia_min = self.get_parameter('actualizar_distancia_min').value
+        self.actualizar_angulo_min = self.get_parameter('actualizar_angulo_min').value
+        self.umbral_calidad = self.get_parameter('umbral_calidad').value
+        self.periodo_debug = self.get_parameter('periodo_debug').value
+        self.max_poses_camino = self.get_parameter('max_poses_camino').value
 
         # Estado del filtro: array (num_particulas, 4) con columnas
         # (x, y, theta, peso). Arranca como una nube gaussiana angosta
@@ -109,6 +134,8 @@ class Localizador(Node):
         self.info_mapa = None
         self.ultimo_odom = None
         self.ultimo_scan = None
+        self.odom_ultima_correccion = None   # pose de /odom en la última corrección
+        self.ultimo_debug = None             # s, última publicación de debug
 
         self.tf_buffer = Buffer()
         self.tf_listener = TransformListener(self.tf_buffer, self)
@@ -130,6 +157,7 @@ class Localizador(Node):
         self.pub_particulas = self.create_publisher(PoseArray, 'particlecloud', 10)
         self.pub_camino_odom = self.create_publisher(Path, 'camino_odom', 10)
         self.pub_camino_corregido = self.create_publisher(Path, 'camino_corregido', 10)
+        self.pub_calidad = self.create_publisher(Float32, 'calidad_localizacion', 10)
 
         # frame_id=map por consistencia visual en RViz con los otros dos
         # caminos, aunque abajo se le cargan poses crudas de /odom (frame
@@ -169,8 +197,6 @@ class Localizador(Node):
             dtheta = normalizar_angulo(theta - theta0)
 
             self.particulas = self.mover_particulas(self.particulas, dx, dy, dtheta, theta0)
-            self.publicar_particulas()
-            self.acumular_camino(self.camino_odom_msg, self.pub_camino_odom, x, y, theta)
 
         self.ultimo_odom = (x, y, theta)
 
@@ -185,15 +211,53 @@ class Localizador(Node):
         if puntos is None or len(puntos) == 0:
             return
 
-        pesos = self.pesar_particulas(self.particulas, puntos)
-        self.particulas = self.remuestrear(self.particulas, pesos)
-        self.publicar_particulas()
+        if self.se_movio_desde_la_ultima_correccion():
+            pesos = self.pesar_particulas(self.particulas, puntos)
+            self.particulas = self.remuestrear(self.particulas, pesos)
+            self.odom_ultima_correccion = self.ultimo_odom
 
+        # map->odom se publica en cada scan aunque no se haya corregido: si no, quien pida
+        # la tf en un instante posterior a la última publicada recibe un error de extrapolación.
         pose_estimada = self.estimar_pose(self.particulas)
+        self.publicar_transformada(pose_estimada)
+        self.pub_calidad.publish(Float32(data=self.calidad(pose_estimada, puntos)))
+        self.publicar_debug(pose_estimada)
+
+    def se_movio_desde_la_ultima_correccion(self) -> bool:
+        if self.odom_ultima_correccion is None:
+            return True
+        x0, y0, t0 = self.odom_ultima_correccion
+        x, y, t = self.ultimo_odom
+        return (math.hypot(x - x0, y - y0) >= self.actualizar_distancia_min
+                or abs(normalizar_angulo(t - t0)) >= self.actualizar_angulo_min)
+
+    def calidad(self, pose, puntos_scan) -> float:
+        """Fracción (0-1) de los puntos del scan que caen sobre una pared del mapa si el
+        robot estuviera en `pose`. Bien localizado da cerca de 1; perdido, mucho menos."""
+        x, y, theta = pose
+        c, s = math.cos(theta), math.sin(theta)
+        xs = x + c * puntos_scan[:, 0] - s * puntos_scan[:, 1]
+        ys = y + s * puntos_scan[:, 0] + c * puntos_scan[:, 1]
+        res = self.info_mapa.resolution
+        col = ((xs - self.info_mapa.origin.position.x) / res).astype(int)
+        fila = ((ys - self.info_mapa.origin.position.y) / res).astype(int)
+        alto, ancho = self.campo.shape
+        dentro = (fila >= 0) & (fila < alto) & (col >= 0) & (col < ancho)
+        prob = np.zeros(len(xs))
+        prob[dentro] = self.campo[fila[dentro], col[dentro]]
+        return float(np.mean(prob >= self.umbral_calidad))
+
+    def publicar_debug(self, pose_estimada):
+        """Partículas y caminos para RViz, como mucho una vez cada periodo_debug."""
+        ahora = self.get_clock().now().nanoseconds * 1e-9
+        if self.ultimo_debug is not None and ahora - self.ultimo_debug < self.periodo_debug:
+            return
+        self.ultimo_debug = ahora
+        self.publicar_particulas()
+        self.acumular_camino(self.camino_odom_msg, self.pub_camino_odom, *self.ultimo_odom)
         self.acumular_camino(
             self.camino_corregido_msg, self.pub_camino_corregido, *pose_estimada
         )
-        self.publicar_transformada(pose_estimada)
 
     # ---------- plomería resuelta ----------
 
@@ -260,6 +324,7 @@ class Localizador(Node):
         pose_stamped.pose.position.y = float(y)
         pose_stamped.pose.orientation = yaw_a_quaternion(float(theta))
         camino_msg.poses.append(pose_stamped)
+        del camino_msg.poses[:-self.max_poses_camino]
         camino_msg.header.stamp = pose_stamped.header.stamp
         publisher.publish(camino_msg)
 
@@ -404,6 +469,7 @@ class Localizador(Node):
         # 4.
         prob = np.zeros_like(row, dtype=np.float64)
         prob[valid] = self.campo[row[valid], col[valid]]
+        prob = np.maximum(prob, self.piso_probabilidad)
 
         # 5.
         log_pesos = np.sum(np.log(prob + 1e-10), axis=1)  # evitar log(0)

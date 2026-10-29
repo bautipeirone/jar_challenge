@@ -41,11 +41,14 @@ class NodoEquipo(Node):
         self.cantidad_victimas = self.get_parameter('cantidad_victimas').value
 
         self.mapa = None
+        self.reportes_hechos = 0  # cada mensaje en /victimas gasta uno de los N, puntúe o no
 
         self.sub_mapa = self.create_subscription(
             OccupancyGrid, '/map', self.al_recibir_mapa, QOS_MAPA)
         self.sub_cmd_vel_evasor = self.create_subscription(
             Twist, '/cmd_vel_evasor', self.al_recibir_cmd_vel_evasor, 10)
+        self.sub_confirmadas = self.create_subscription(
+            PointStamped, 'victima_confirmada', self.al_confirmar_victima, 10)
         self.pub_cmd_vel = self.create_publisher(Twist, '/cmd_vel', 10)
         self.pub_victimas = self.create_publisher(PointStamped, '/victimas', 10)
         self.pub_done = self.create_publisher(Empty, '/done', 10)
@@ -73,7 +76,21 @@ class NodoEquipo(Node):
         """
         if self.mapa is not None:
             self.pub_cmd_vel.publish(msg)
-            
+
+    def al_confirmar_victima(self, msg):
+        """gestor_victimas confirmó una caja: se reporta, mientras queden reportes."""
+        if self.mapa is None:
+            return  # no reportar antes del mapa (§5)
+        if self.reportes_hechos >= self.cantidad_victimas:
+            self.get_logger().warn(
+                f'Confirmada otra víctima en ({msg.point.x:.2f}, {msg.point.y:.2f}), pero ya '
+                f'se usaron los {self.cantidad_victimas} reportes: no se reporta.')
+            return
+        self.reportar_victima(msg.point.x, msg.point.y)
+        self.reportes_hechos += 1
+        self.log(f'Reporte {self.reportes_hechos}/{self.cantidad_victimas}: '
+                 f'({msg.point.x:.2f}, {msg.point.y:.2f})')
+
     def ciclo_de_control(self):
         pass
 

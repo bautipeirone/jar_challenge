@@ -13,12 +13,16 @@ cada corrida, y se pasa así:  ros2 launch equipo_jar competencia.launch.py vict
 `use_sim_time` es false por defecto porque el robot real no publica /clock
 (§7.3). En el simulador se pasa en true (lo hacen tools/correr_simulador.sh y
 el CI).
+
+`evasor` (true por defecto) permite apagar el evasor para teleoperar en las pruebas:
+    ros2 launch equipo_jar competencia.launch.py evasor:=false
 """
 import os
 
 from ament_index_python.packages import get_package_share_directory
 from launch import LaunchDescription
 from launch.actions import DeclareLaunchArgument
+from launch.conditions import IfCondition
 from launch.substitutions import LaunchConfiguration
 from launch_ros.actions import Node
 from launch_ros.parameter_descriptions import ParameterValue
@@ -34,6 +38,8 @@ def generate_launch_description():
         DeclareLaunchArgument('use_sim_time', default_value='false'),
         DeclareLaunchArgument('victimas', default_value='5',
                               description='cantidad de víctimas a buscar (N)'),
+        DeclareLaunchArgument('evasor', default_value='true',
+                              description='false para teleoperar sin que el evasor se pelee'),
         Node(   # equipo_jar
             package='equipo_jar',
             executable='nodo_equipo',
@@ -81,6 +87,15 @@ def generate_launch_description():
                 'use_sim_time': use_sim_time,
             }],
         ),
+        Node(   # gestor_victimas
+            package='equipo_jar',
+            executable='gestor_victimas',
+            name='gestor_victimas',
+            output='screen',
+            parameters=[params, {
+                'use_sim_time': use_sim_time,
+            }],
+        ),
         Node(   # evasor
             package='equipo_jar',
             executable='evasor',
@@ -89,5 +104,6 @@ def generate_launch_description():
             parameters=[params, {
                 'use_sim_time': use_sim_time,
             }],
+            condition=IfCondition(LaunchConfiguration('evasor')),
         )
     ])

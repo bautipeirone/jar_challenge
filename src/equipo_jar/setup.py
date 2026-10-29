@@ -29,6 +29,7 @@ setup(
             'localizador = equipo_jar.localizador:main',
             'evasor = equipo_jar.evasor:main',
             'detector_scan = equipo_jar.detector_scan:main',
+            'gestor_victimas = equipo_jar.gestor_victimas:main',
         ],
     },
 )

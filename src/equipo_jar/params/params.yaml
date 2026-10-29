@@ -26,16 +26,31 @@ evasor:
 
 localizador:
   ros__parameters:
-    num_particulas: 100
+    num_particulas: 300
     dispersion_inicial_xy: 0.3
     dispersion_inicial_theta: 0.3
     pose_inicial_x: 0.0
     pose_inicial_y: 0.0
     pose_inicial_theta: 0.0
-    gamma1: 0.0025
-    gamma2: 0.0025
-    gamma3: 0.0025
-    gamma4: 0.0025
-    gamma5: 0.0025
-    gamma6: 0.0025
+    gamma1: 0.01
+    gamma2: 0.01
+    gamma3: 0.01
+    gamma4: 0.01
+    gamma5: 0.01
+    gamma6: 0.01
+    piso_probabilidad: 5.0          # (0-100) aporte mínimo de cada punto del scan al peso
+    actualizar_distancia_min: 0.05  # m: no corregir si el robot casi no se movió
+    actualizar_angulo_min: 0.05     # rad
+    umbral_calidad: 30.0            # (0-100) campo mínimo para contar un punto como "sobre pared"
+    periodo_debug: 0.5              # s entre publicaciones de partículas y caminos
+    max_poses_camino: 1000
 
+gestor_victimas:
+  ros__parameters:
+    radio_asociacion: 0.35              # m: dos detecciones más cerca son la misma caja
+    observaciones_minimas: 8            # veces que hay que ver una caja para reportarla
+    tiempo_olvido: 5.0                  # s sin ver un candidato no confirmado antes de descartarlo
+    distancia_maxima_observacion: 2.0   # m: detecciones más lejanas se ignoran
+    medio_lado_caja: 0.125              # m: de la cara que ve el lidar al centro de la caja
+    calidad_minima: 0.6                 # (0-1) por debajo, la pose es dudosa y se ignoran detecciones
+    calidad_vencimiento: 1.0            # s
