@@ -15,6 +15,8 @@ from geometry_msgs.msg import Pose, PoseArray, PoseStamped, Quaternion, Transfor
 
 from tf2_ros import TransformBroadcaster, Buffer, TransformListener
 
+from equipo_jar.imu import GiroImu
+
 
 def normalizar_angulo(angulo: float) -> float:
     """Lleva un ángulo cualquiera al rango (-pi, pi]."""
@@ -96,6 +98,14 @@ class Localizador(Node):
         # del nodo, y crecía con la duración de la corrida.
         self.declare_parameter('periodo_debug', 0.5)               # s
         self.declare_parameter('max_poses_camino', 1000)
+        # Giro de cada paso del modelo de movimiento: del IMU (true) o de las ruedas (false).
+        # En el robot real las ruedas se equivocan mucho al girar; el giróscopo no. Si el IMU
+        # deja de publicar (más de imu_vencimiento s), se vuelve a las ruedas.
+        self.declare_parameter('usar_imu', True)
+        self.declare_parameter('imu_vencimiento', 0.5)             # s
+        # Corrección de escala del avance de las ruedas (semana 10, paso 3): avance real /
+        # avance según /odom. 1.0 = sin corrección.
+        self.declare_parameter('escala_avance', 1.0)
 
         self.map_frame = self.get_parameter('map_frame').value
         self.odom_frame = self.get_parameter('odom_frame').value
@@ -114,6 +124,8 @@ class Localizador(Node):
         self.umbral_calidad = self.get_parameter('umbral_calidad').value
         self.periodo_debug = self.get_parameter('periodo_debug').value
         self.max_poses_camino = self.get_parameter('max_poses_camino').value
+        self.imu_vencimiento = self.get_parameter('imu_vencimiento').value
+        self.escala_avance = self.get_parameter('escala_avance').value
 
         # Estado del filtro: array (num_particulas, 4) con columnas
         # (x, y, theta, peso). Arranca como una nube gaussiana angosta
@@ -140,6 +152,9 @@ class Localizador(Node):
         self.tf_buffer = Buffer()
         self.tf_listener = TransformListener(self.tf_buffer, self)
         self.tf_broadcaster = TransformBroadcaster(self)
+        self.giro = (GiroImu(self, self.tf_buffer, self.base_frame)
+                     if self.get_parameter('usar_imu').value else None)
+        self.yaw_imu_ultimo_odom = None   # yaw del IMU en el /odom anterior
 
         qos_mapa = QoSProfile(
             depth=1,
@@ -191,14 +206,31 @@ class Localizador(Node):
         y = msg.pose.pose.position.y
         theta = self.yaw_de_quaternion(msg.pose.pose.orientation)
 
+        yaw_imu = self.yaw_imu_vigente(msg)
         if self.ultimo_odom is not None:
             x0, y0, theta0 = self.ultimo_odom
-            dx, dy = x - x0, y - y0
-            dtheta = normalizar_angulo(theta - theta0)
+            dx = (x - x0) * self.escala_avance
+            dy = (y - y0) * self.escala_avance
+            if yaw_imu is not None and self.yaw_imu_ultimo_odom is not None:
+                dtheta = yaw_imu - self.yaw_imu_ultimo_odom      # giro según el IMU
+            else:
+                dtheta = normalizar_angulo(theta - theta0)       # giro según las ruedas
 
+            # theta0 sigue siendo el de /odom: sirve para pasar (dx, dy), que /odom calculó
+            # con su propio rumbo, al frame del robot.
             self.particulas = self.mover_particulas(self.particulas, dx, dy, dtheta, theta0)
 
         self.ultimo_odom = (x, y, theta)
+        self.yaw_imu_ultimo_odom = yaw_imu
+
+    def yaw_imu_vigente(self, msg_odom):
+        """Yaw integrado del IMU, o None si no se usa, no llegó o dejó de publicar."""
+        if self.giro is None or not self.giro.listo:
+            return None
+        t_odom = msg_odom.header.stamp.sec + msg_odom.header.stamp.nanosec * 1e-9
+        if t_odom > 0 and abs(t_odom - self.giro.instante()) > self.imu_vencimiento:
+            return None
+        return self.giro.yaw
 
     def recibir_scan(self, msg: LaserScan):
         """Corrección: pesa las partículas contra el scan actual, resamplea,

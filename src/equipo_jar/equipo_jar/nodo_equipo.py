@@ -14,6 +14,8 @@ Lo que tenés que hacer vos, en este orden:
 3. Detectar cajas rojas y reportarlas con `armar_reporte`.
 4. Opcional: volver a la largada y publicar en /done.
 """
+import math
+
 import rclpy
 from geometry_msgs.msg import PointStamped, Twist
 from nav_msgs.msg import OccupancyGrid
@@ -39,6 +41,8 @@ class NodoEquipo(Node):
         # Cantidad de víctimas a buscar (N), que llega como argumento del launch (victimas:=N).
         self.declare_parameter('cantidad_victimas', 5)
         self.cantidad_victimas = self.get_parameter('cantidad_victimas').value
+        self.velocidad_lineal_max = self.get_parameter('velocidad_lineal_max').value
+        self.velocidad_angular_max = self.get_parameter('velocidad_angular_max').value
 
         self.mapa = None
         self.reportes_hechos = 0  # cada mensaje en /victimas gasta uno de los N, puntúe o no
@@ -75,7 +79,20 @@ class NodoEquipo(Node):
         estrategia de control.
         """
         if self.mapa is not None:
-            self.pub_cmd_vel.publish(msg)
+            self.pub_cmd_vel.publish(self.recortar(msg))
+
+    def recortar(self, msg):
+        """Todo lo que va a /cmd_vel pasa por acá: ningún nodo puede superar los límites
+        (la organización limita a 0,5 m/s). El avance se recorta como vector (x, y), para no
+        cambiar la dirección de un movimiento en diagonal."""
+        salida = Twist()
+        rapidez = math.hypot(msg.linear.x, msg.linear.y)
+        escala = 1.0 if rapidez <= self.velocidad_lineal_max else self.velocidad_lineal_max / rapidez
+        salida.linear.x = msg.linear.x * escala
+        salida.linear.y = msg.linear.y * escala
+        salida.angular.z = max(-self.velocidad_angular_max,
+                               min(self.velocidad_angular_max, msg.angular.z))
+        return salida
 
     def al_confirmar_victima(self, msg):
         """gestor_victimas confirmó una caja: se reporta, mientras queden reportes."""

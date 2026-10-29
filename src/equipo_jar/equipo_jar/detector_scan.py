@@ -10,6 +10,8 @@ from rclpy.time import Time
 from sensor_msgs.msg import CameraInfo, Image, LaserScan
 from cv_bridge import CvBridge
 
+from equipo_jar.imu import GiroImu
+
 
 def mascara_rojo(imagen_hsv, hue_bajo_1, hue_alto_1, hue_bajo_2, hue_alto_2,
                   saturacion_min, valor_min):
@@ -76,6 +78,11 @@ class DetectorScanColor(Node):
         self.declare_parameter('hue_rojo_alto_2', 180.0)
         self.declare_parameter('saturacion_min', 120.0)
         self.declare_parameter('valor_min', 80.0)
+        # Girando rápido, la imagen y el scan son de instantes distintos (el scan tarda ~0,13 s
+        # en dar la vuelta) y los puntos rojos se corren sobre la pared (semana 10). Por encima
+        # de esta velocidad de giro (rad/s, medida con el IMU) no se marca nada como rojo.
+        # 0 = filtro apagado.
+        self.declare_parameter('giro_maximo', 0.3)
 
         self.hue_rojo_bajo_1 = self.get_parameter('hue_rojo_bajo_1').value
         self.hue_rojo_alto_1 = self.get_parameter('hue_rojo_alto_1').value
@@ -83,10 +90,12 @@ class DetectorScanColor(Node):
         self.hue_rojo_alto_2 = self.get_parameter('hue_rojo_alto_2').value
         self.saturacion_min = self.get_parameter('saturacion_min').value
         self.valor_min = self.get_parameter('valor_min').value
+        self.giro_maximo = self.get_parameter('giro_maximo').value
 
         self.puente = CvBridge()
         self.tf_buffer = tf2_ros.Buffer()
         self.tf_listener = tf2_ros.TransformListener(self.tf_buffer, self)
+        self.giro = GiroImu(self, self.tf_buffer)
 
         self.ultima_imagen = None
         self.info_camara = None
@@ -146,6 +155,12 @@ class DetectorScanColor(Node):
         if self.ultima_imagen is None or self.info_camara is None:
             return
 
+        # Girando rápido no se confía en el rojo: se publica el scan sin puntos rojos (y se
+        # ahorra convertir la imagen).
+        if self.girando_rapido():
+            self.publicar_rojo(msg, np.full(len(msg.ranges), math.inf))
+            return
+
         # 2)
         transformada = self.obtener_transform_laser_a_camara(msg.header.frame_id)
         if transformada is None:
@@ -200,6 +215,14 @@ class DetectorScanColor(Node):
         rangos_filtrados = np.where(validos & es_rojo, rangos, math.inf)
 
         # 11)
+        self.publicar_rojo(msg, rangos_filtrados)
+
+    def girando_rapido(self) -> bool:
+        return (self.giro_maximo > 0 and self.giro.listo
+                and abs(self.giro.velocidad) > self.giro_maximo)
+
+    def publicar_rojo(self, msg: LaserScan, rangos_filtrados):
+        """Copia de `msg` con los rangos filtrados (inf = no es rojo), en /scan_rojo."""
         new_msg = LaserScan()
         new_msg.header = msg.header
         new_msg.angle_min = msg.angle_min

@@ -14,6 +14,7 @@ nodo_equipo:
 detector_scan:
   ros__parameters:
     saturacion_min: 120.0
+    giro_maximo: 0.3                # rad/s (IMU): girando más rápido no se marca rojo; 0 = apagado
 
 evasor:
   ros__parameters:
@@ -44,6 +45,9 @@ localizador:
     umbral_calidad: 30.0            # (0-100) campo mínimo para contar un punto como "sobre pared"
     periodo_debug: 0.5              # s entre publicaciones de partículas y caminos
     max_poses_camino: 1000
+    usar_imu: true                  # giro del modelo de movimiento: IMU (true) o ruedas (false)
+    imu_vencimiento: 0.5            # s sin IMU antes de volver a las ruedas
+    escala_avance: 1.0              # avance real / avance según /odom (calibrar con el bag)
 
 gestor_victimas:
   ros__parameters:

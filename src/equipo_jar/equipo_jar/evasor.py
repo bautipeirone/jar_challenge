@@ -7,6 +7,9 @@ from rclpy.qos import qos_profile_sensor_data
 from geometry_msgs.msg import Twist
 from nav_msgs.msg import Odometry
 from sensor_msgs.msg import LaserScan
+from tf2_ros import Buffer, TransformListener
+
+from equipo_jar.imu import GiroImu
 
 FRECUENCIA_HZ = 10.0
 
@@ -72,12 +75,17 @@ class Evasor(Node):
         self.subscription_odom = self.create_subscription(
             Odometry, 'odom', self.recibir_odom, 10
         )
+        # Giro medido con el IMU: en el robot real las ruedas patinan al girar y la odometría
+        # sobreestima o subestima el ángulo. Si el IMU no llegó todavía, se usa /odom.
+        self.tf_buffer = Buffer()
+        self.tf_listener = TransformListener(self.tf_buffer, self)
+        self.giro = GiroImu(self, self.tf_buffer)
         self.timer = self.create_timer(1.0 / FRECUENCIA_HZ, self.maquina_de_estados)
 
         self.ultimo_scan = None
         self.yaw_actual = None
         self.estado = ESTADO_AVANZAR
-        self.yaw_inicial_giro = 0.0
+        self.yaw_inicial_giro = ('odom', 0.0)
         self.angulo_frente_rad = self.angulo_frente_deg * 2*math.pi / 360 
         self.angulo_vision_rad = self.angulo_vision_deg * 2*math.pi / 360 
         self.angulo_giro_rad = self.angulo_giro_deg * 2*math.pi / 360 
@@ -144,15 +152,29 @@ class Evasor(Node):
         return bool(mascara.any())
         
 
+    def yaw_para_giros(self):
+        """Yaw con el que se mide cuánto giró el robot: el del IMU si está, si no el de
+        /odom. El del IMU no está normalizado, así que la resta no da la vuelta en ±pi."""
+        if self.giro.listo:
+            return ('imu', self.giro.yaw)
+        return ('odom', self.yaw_actual)
+
     def iniciar_giro(self):
         """Guarda el yaw actual como referencia para saber, más adelante,
-        cuánto giró realmente el robot (medido con la odometría)."""
-        self.yaw_inicial_giro = self.yaw_actual
+        cuánto giró realmente el robot."""
+        self.yaw_inicial_giro = self.yaw_para_giros()
 
     def angulo_girado(self) -> float:
         """Cuánto giró el robot (en radianes, siempre positivo) desde que
-        empezó el giro actual, según la odometría."""
-        return abs(self.normalizar_angulo(self.yaw_actual - self.yaw_inicial_giro))
+        empezó el giro actual."""
+        fuente, yaw = self.yaw_para_giros()
+        fuente_inicial, yaw_inicial = self.yaw_inicial_giro
+        if fuente != fuente_inicial:   # el IMU apareció a mitad del giro: arrancar de nuevo
+            self.yaw_inicial_giro = (fuente, yaw)
+            return 0.0
+        if fuente == 'imu':
+            return abs(yaw - yaw_inicial)
+        return abs(self.normalizar_angulo(yaw - yaw_inicial))
 
     def avanzar(self) -> Twist:
         """Devuelve un Twist que mueva el robot derecho hacia
