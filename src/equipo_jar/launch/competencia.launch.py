@@ -22,7 +22,6 @@ import os
 from ament_index_python.packages import get_package_share_directory
 from launch import LaunchDescription
 from launch.actions import DeclareLaunchArgument
-from launch.conditions import IfCondition
 from launch.substitutions import LaunchConfiguration
 from launch_ros.actions import Node
 from launch_ros.parameter_descriptions import ParameterValue
@@ -40,70 +39,18 @@ def generate_launch_description():
                               description='cantidad de víctimas a buscar (N)'),
         DeclareLaunchArgument('evasor', default_value='true',
                               description='false para teleoperar sin que el evasor se pelee'),
-        Node(   # equipo_jar
+        # Todos los nodos del equipo (nodo_equipo, detector_scan, localizador,
+        # campo_verosimilitud, detector_obstaculos, gestor_victimas y evasor) corren en un solo
+        # proceso para ahorrar CPU: ver equipo_jar/principal.py. Siguen siendo nodos separados,
+        # cada uno con su sección en params.yaml. Sin `name=`: renombraría a todos igual.
+        Node(
             package='equipo_jar',
-            executable='nodo_equipo',
-            name='nodo_equipo',
+            executable='principal',
             output='screen',
+            arguments=['--evasor', LaunchConfiguration('evasor')],
             parameters=[params, {
                 'use_sim_time': use_sim_time,
                 'cantidad_victimas': ParameterValue(victimas, value_type=int),
             }],
         ),
-        Node(   # detector_scan
-            package='equipo_jar',
-            executable='detector_scan',
-            name='detector_scan',
-            output='screen',
-            parameters=[params, {
-                    'use_sim_time': use_sim_time,
-                }
-            ],
-        ),
-        Node(   # localizador
-            package='equipo_jar',
-            executable='localizador',
-            name='localizador',
-            output='screen',
-            parameters=[params, {
-                'use_sim_time': use_sim_time,
-            }],
-        ),
-        Node(   # campo_verosimilitud
-            package='equipo_jar',
-            executable='campo_verosimilitud',
-            name='campo_verosimilitud',
-            output='screen',
-            parameters=[params, {
-                'use_sim_time': use_sim_time,
-            }],
-        ),
-        Node(   # detector_obstaculos
-            package='equipo_jar',
-            executable='detector_obstaculos',
-            name='detector_obstaculos',
-            output='screen',
-            parameters=[params, {
-                'use_sim_time': use_sim_time,
-            }],
-        ),
-        Node(   # gestor_victimas
-            package='equipo_jar',
-            executable='gestor_victimas',
-            name='gestor_victimas',
-            output='screen',
-            parameters=[params, {
-                'use_sim_time': use_sim_time,
-            }],
-        ),
-        Node(   # evasor
-            package='equipo_jar',
-            executable='evasor',
-            name='evasor',
-            output='screen',
-            parameters=[params, {
-                'use_sim_time': use_sim_time,
-            }],
-            condition=IfCondition(LaunchConfiguration('evasor')),
-        )
     ])

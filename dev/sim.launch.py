@@ -12,14 +12,18 @@ Argumentos:
   spawn_x/y/yaw  pose de largada del robot en el simulador (m, m, rad)
   motion_profile ideal | stress   (stress se parece más al robot real)
   motion_bias    true | false     (drift aleatorio de una base mecanum sin calibrar)
-  gui            ventana de Gazebo
+  gui            ventana de Gazebo (false por defecto: cuesta ~50 % de CPU y RViz alcanza)
   rviz           RViz con dev/equipo.rviz
   equipo         levantar también competencia.launch.py (victimas:=N sale del mundo)
   manual         true: el mapa se publica con  ros2 service call /juez/iniciar std_srvs/srv/Trigger
                  false: 5 s después del primer /scan
   libre          true: el juez no corta por tiempo ni por robot quieto (para teleoperar)
+  evasor         false: no levanta el evasor, para teleoperar
+  cloud_decimation  1 de cada N píxeles en la nube de profundidad del simulador (4 por defecto).
+                 El equipo no la usa, pero el simulador la arma igual y era lo más caro después de
+                 Gazebo. Con 1 queda como en el robot.
 
-El teleop va en otra terminal, porque necesita el teclado:
+El teleop va en otra terminal, porque necesita el teclado (con evasor:=false):
     ros2 run teleop_twist_keyboard teleop_twist_keyboard --ros-args -r cmd_vel:=cmd_vel_evasor
 
 El resultado de cada corrida queda en build/practica/<mundo>.json.
@@ -65,6 +69,7 @@ def armar(context):
             'spawn_x': LaunchConfiguration('spawn_x'),
             'spawn_y': LaunchConfiguration('spawn_y'),
             'spawn_yaw': LaunchConfiguration('spawn_yaw'),
+            'cloud_decimation': LaunchConfiguration('cloud_decimation'),
         }.items(),
     )]
 
@@ -92,7 +97,8 @@ def armar(context):
         acciones.append(IncludeLaunchDescription(
             PythonLaunchDescriptionSource(os.path.join(
                 get_package_share_directory('equipo_jar'), 'launch', 'competencia.launch.py')),
-            launch_arguments={'use_sim_time': 'true', 'victimas': str(n_victimas)}.items(),
+            launch_arguments={'use_sim_time': 'true', 'victimas': str(n_victimas),
+                              'evasor': LaunchConfiguration('evasor')}.items(),
         ))
     return acciones
 
@@ -102,8 +108,9 @@ def generate_launch_description():
         ('mundo', 'maze_1_6x5'),
         ('spawn_x', '0.0'), ('spawn_y', '0.0'), ('spawn_yaw', '0.0'),
         ('motion_profile', 'ideal'), ('motion_bias', 'false'),
-        ('gui', 'true'), ('rviz', 'true'), ('equipo', 'true'),
-        ('manual', 'true'), ('libre', 'true'),
+        ('gui', 'false'), ('rviz', 'true'), ('equipo', 'true'),
+        ('manual', 'true'), ('libre', 'true'), ('evasor', 'true'),
+        ('cloud_decimation', '4'),
     ]
     return LaunchDescription(
         [DeclareLaunchArgument(nombre, default_value=valor) for nombre, valor in argumentos]

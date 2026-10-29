@@ -68,7 +68,7 @@ class DetectorScanColor(Node):
     """
 
     def __init__(self):
-        super().__init__('detector_scan_color')
+        super().__init__('detector_scan')
 
         self.declare_parameter('hue_rojo_bajo_1', 0.0)
         self.declare_parameter('hue_rojo_alto_1', 10.0)
@@ -111,7 +111,9 @@ class DetectorScanColor(Node):
         )
 
     def recibir_imagen(self, msg: Image):
-        self.ultima_imagen = self.puente.imgmsg_to_cv2(msg, desired_encoding='bgr8')
+        # Se guarda el mensaje crudo y se convierte recién en recibir_scan: la cámara publica a
+        # 30 Hz y el scan llega a ~10 Hz, así que convertir cada imagen era trabajo tirado.
+        self.ultima_imagen = msg
 
     def recibir_info_camara(self, msg: CameraInfo):
         # K es la matriz intrínseca 3x3 en fila: [fx 0 cx; 0 fy cy; 0 0 1]
@@ -175,7 +177,8 @@ class DetectorScanColor(Node):
         )
 
         # 8)
-        img_hsv = cv2.cvtColor(self.ultima_imagen, cv2.COLOR_BGR2HSV)
+        imagen = self.puente.imgmsg_to_cv2(self.ultima_imagen, desired_encoding='bgr8')
+        img_hsv = cv2.cvtColor(imagen, cv2.COLOR_BGR2HSV)
         mask = mascara_rojo(
             img_hsv,
             self.hue_rojo_bajo_1,

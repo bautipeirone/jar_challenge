@@ -23,6 +23,7 @@ setup(
     tests_require=['pytest'],
     entry_points={
         'console_scripts': [
+            'principal = equipo_jar.principal:main',
             'nodo_equipo = equipo_jar.nodo_equipo:main',
             'detector_obstaculos = equipo_jar.detector_obstaculos:main',
             'campo_verosimilitud = equipo_jar.campo_verosimilitud:main',
