@@ -95,6 +95,7 @@ espera_del_mapa() {
   return $rc
 }
 
+paso "Dependencias permitidas" python3 tools/verificar_dependencias.py
 paso "Estructura de la entrega" python3 tools/verificar_estructura.py $TEMPLATE
 paso "Parámetros (params/)" python3 tools/verificar_params.py
 paso "Revisión estática (interfaces y hardcodeo)" python3 tools/verificar_estatico.py
@@ -103,8 +104,9 @@ if [[ -f install/setup.bash ]]; then
   paso "El launch espera el mapa (sin simulador)" espera_del_mapa
 fi
 if [[ -n "$JUEZ" ]]; then
-  paso "Tests del puntaje y del ranking" \
-    python3 -m pytest -p no:anyio -q tools/tests/test_puntaje.py tools/tests/test_ranking.py
+  paso "Tests del puntaje, del ranking y del publicador" \
+    python3 -m pytest -p no:anyio -q tools/tests/test_puntaje.py tools/tests/test_ranking.py \
+      tools/tests/test_publicar.py tools/tests/test_dependencias.py
   paso "Juez de punta a punta (equipo falso, sin simulador)" python3 tools/tests/e2e_juez.py
 fi
 for mundo in "${MUNDOS[@]:-}"; do
